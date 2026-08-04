@@ -11,6 +11,7 @@ import os
 import logging
 from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
+import re
 
 # Configure enhanced logging
 def setup_logging():
@@ -58,6 +59,32 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+# Helper function to find keyword matches with context
+def find_keyword_matches(content, query, context_chars=100):
+    """Find all occurrences of query in content and return with context"""
+    matches = []
+    # Case-insensitive search
+    pattern = re.compile(re.escape(query), re.IGNORECASE)
+    
+    for match in pattern.finditer(content):
+        start_idx = max(0, match.start() - context_chars)
+        end_idx = min(len(content), match.end() + context_chars)
+        
+        # Get context
+        context_before = content[start_idx:match.start()]
+        context_after = content[match.end():end_idx]
+        matched_text = content[match.start():match.end()]
+        
+        matches.append({
+            "start": match.start(),
+            "end": match.end(),
+            "context_before": context_before,
+            "matched_text": matched_text,
+            "context_after": context_after
+        })
+    
+    return matches
+
 # Middleware to log all requests
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -100,7 +127,7 @@ async def create_document(
     content: str = Form(""),
     db: Session = Depends(get_db)
 ):
-    logger.info(f"Creating document: title='{title}', category='{category}', tags='{tags}'")
+    logger.info(f"Creating document: title=\"{title}\", category=\"{category}\", tags=\"{tags}\"")
     try:
         # Read content from file if provided, otherwise use content field
         if file:
@@ -156,7 +183,7 @@ def read_document(doc_id: int, db: Session = Depends(get_db)):
         if doc is None:
             logger.warning(f"Document with id={doc_id} not found")
             raise HTTPException(status_code=404, detail="Document not found")
-        logger.info(f"Found document: id={doc.id}, title='{doc.title}'")
+        logger.info(f"Found document: id={doc.id}, title=\"{doc.title}\"")
         return doc
     except HTTPException:
         raise
@@ -174,7 +201,7 @@ async def update_document(
     content: str = Form(""),
     db: Session = Depends(get_db)
 ):
-    logger.info(f"Updating document with id={doc_id}: title='{title}', category='{category}'")
+    logger.info(f"Updating document with id={doc_id}: title=\"{title}\", category=\"{category}\"")
     try:
         db_doc = db.query(Document).filter(Document.id == doc_id).first()
         if db_doc is None:
@@ -284,7 +311,26 @@ def search_documents(query: str, db: Session = Depends(get_db)):
             if doc.id not in combined:
                 combined[doc.id] = doc
         
-        result_docs = list(combined.values())
+        # Prepare search results with keyword matches
+        result_docs = []
+        for doc_id, doc in combined.items():
+            # Find keyword matches in content
+            matches = find_keyword_matches(doc.content, query)
+            result_docs.append({
+                "id": doc.id,
+                "title": doc.title,
+                "category": doc.category,
+                "tags": doc.tags,
+                "created_at": doc.created_at,
+                "updated_at": doc.updated_at,
+                "matches": matches,
+                "match_count": len(matches),
+                "is_keyword_match": doc in keyword_results
+            })
+        
+        # Sort by number of matches (descending)
+        result_docs.sort(key=lambda x: x["match_count"], reverse=True)
+        
         logger.info(f"Search returned {len(result_docs)} results total")
         return result_docs
     except Exception as e:

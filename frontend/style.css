@@ -64,17 +64,90 @@ button {
     padding: 15px;
     border-bottom: 1px solid #eee;
     cursor: pointer;
+    transition: background-color 0.2s;
 }
 .doc-item:hover {
     background-color: #f9f9f9;
 }
-.doc-item h3 {
+.doc-item.search-result {
+    border-left: 4px solid #3498db;
+    padding-left: 15px;
+}
+.doc-item.search-result:hover {
+    background-color: #f0f7ff;
+}
+.doc-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     margin-bottom: 5px;
+}
+.doc-header h3 {
+    margin-bottom: 0;
     color: #2c3e50;
+}
+.badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.badge.keyword-match {
+    background-color: #e3f2fd;
+    color: #1976d2;
 }
 .doc-item .meta {
     font-size: 12px;
     color: #7f8c8d;
+    margin-bottom: 10px;
+}
+.matches {
+    margin-top: 10px;
+}
+.match-count {
+    font-size: 12px;
+    color: #27ae60;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.match-snippet {
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 8px 12px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    color: #555;
+}
+.match-snippet .context-before,
+.match-snippet .context-after {
+    color: #666;
+}
+.match-snippet .matched {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-weight: 600;
+}
+.more-matches {
+    font-size: 12px;
+    color: #95a5a6;
+    font-style: italic;
+}
+mark {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 1px 4px;
+    border-radius: 2px;
+}
+.no-results {
+    text-align: center;
+    padding: 40px;
+    color: #7f8c8d;
+}
+.no-results p {
+    font-size: 16px;
 }
 .doc-editor {
     flex: 2;

@@ -24,7 +24,7 @@ def mock_embed(texts):
         if norm == 0:
             vec = [0.0]*48
         else:
-            vec = [v / norm for v in vec]
+            vec = [v / norm if norm != 0 else 0.0 for v in vec]
         embeddings.append(vec)
     return np.array(embeddings, dtype=np.float32)
 
@@ -114,16 +114,21 @@ class SearchEngine:
             
             # query_embedding = self.model.encode([query])[0]
             query_embedding = mock_embed([query])[0]
-            distances, indices = self.index.search(np.array([query_embedding]), top_k)
+            distances, indices = self.index.search(np.array([query_embedding]), min(top_k, self.index.ntotal))
             
             results = []
+            seen_doc_ids = set()
             for i, idx in enumerate(indices[0]):
-                if idx < len(self.doc_ids):
-                    result = {"doc_id": self.doc_ids[idx], "score": float(distances[0][i])}
-                    results.append(result)
-                    logger.debug(f"Found result: doc_id={result['doc_id']}, score={result['score']:.4f}")
+                if 0 <= idx < len(self.doc_ids):
+                    doc_id = self.doc_ids[idx]
+                    score = float(distances[0][i])
+                    # Skip duplicates and invalid scores
+                    if doc_id not in seen_doc_ids and score < 1e10:
+                        results.append({"doc_id": doc_id, "score": score})
+                        seen_doc_ids.add(doc_id)
+                        logger.debug(f"Found result: doc_id={doc_id}, score={score:.4f}")
             
-            logger.info(f"Semantic search returned {len(results)} results")
+            logger.info(f"Semantic search returned {len(results)} unique results")
             return results
         except Exception as e:
             logger.error(f"Failed to perform semantic search: {str(e)}", exc_info=True)
