@@ -9,18 +9,50 @@ from .schemas import DocumentCreate, DocumentUpdate, DocumentInDB
 from .search import search_engine
 import os
 import logging
+from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('./data/app.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
+# Configure enhanced logging
+def setup_logging():
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    
+    # Format: timestamp - logger_name - level - filename:line - message
+    log_format = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Ensure log directory exists
+    os.makedirs('./data', exist_ok=True)
+    
+    # File handler - rotate daily, keep 30 days of logs
+    file_handler = TimedRotatingFileHandler(
+        './data/app.log',
+        when='midnight',
+        interval=1,
+        backupCount=30,
+        encoding='utf-8'
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(log_format)
+    file_handler.suffix = "%Y-%m-%d"  # Log file suffix
+    
+    # Stream handler - only INFO and above
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.INFO)
+    stream_handler.setFormatter(log_format)
+    
+    # Remove existing handlers to avoid duplicates
+    logger.handlers.clear()
+    
+    # Add handlers
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    
+    return logging.getLogger(__name__)
+
+logger = setup_logging()
 
 Base.metadata.create_all(bind=engine)
 
@@ -30,11 +62,18 @@ app = FastAPI()
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start_time = datetime.now()
-    logger.info(f"Request: {request.method} {request.url} from {request.client.host}")
-    response = await call_next(request)
-    process_time = (datetime.now() - start_time).total_seconds()
-    logger.info(f"Response: {response.status_code} for {request.method} {request.url} (took {process_time:.2f}s)")
-    return response
+    client_host = request.client.host if request.client else "unknown"
+    logger.info(f"Request: {request.method} {request.url} from {client_host}")
+    
+    try:
+        response = await call_next(request)
+        process_time = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Response: {response.status_code} for {request.method} {request.url} (took {process_time:.2f}s)")
+        return response
+    except Exception as e:
+        process_time = (datetime.now() - start_time).total_seconds()
+        logger.error(f"Request failed: {request.method} {request.url} - Error: {str(e)} (took {process_time:.2f}s)", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # Mount frontend static files
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
@@ -42,6 +81,7 @@ app.mount("/static", StaticFiles(directory="frontend"), name="static")
 # Serve frontend
 @app.get("/")
 async def read_root():
+    logger.debug("Serving frontend index.html")
     return FileResponse("frontend/index.html")
 
 # Helper function to get category directory path
@@ -60,13 +100,14 @@ async def create_document(
     content: str = Form(""),
     db: Session = Depends(get_db)
 ):
-    logger.info(f"Creating document: title={title}, category={category}")
+    logger.info(f"Creating document: title='{title}', category='{category}', tags='{tags}'")
     try:
         # Read content from file if provided, otherwise use content field
         if file:
-            logger.info(f"Reading content from uploaded file: {file.filename}")
+            logger.info(f"Reading content from uploaded file: {file.filename}, size: {file.size if file.size else 'unknown'} bytes")
             content_bytes = await file.read()
             content = content_bytes.decode("utf-8")
+            logger.debug(f"File content length: {len(content)} characters")
         
         db_doc = Document(
             title=title,
@@ -81,7 +122,7 @@ async def create_document(
         # Save Markdown file in category-specific directory
         category_dir = get_category_dir(category)
         doc_path = os.path.join(category_dir, f"{db_doc.id}.md")
-        with open(doc_path, "w") as f:
+        with open(doc_path, "w", encoding="utf-8") as f:
             f.write(content)
         logger.info(f"Document saved to file: {doc_path}")
         
@@ -89,8 +130,10 @@ async def create_document(
         search_engine.add_document(db_doc.id, content)
         logger.info(f"Document created successfully with id={db_doc.id}")
         return db_doc
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error creating document: {e}", exc_info=True)
+        logger.error(f"Error creating document: {str(e)}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -102,7 +145,7 @@ def read_documents(skip: int = 0, limit: int = 100, db: Session = Depends(get_db
         logger.info(f"Found {len(docs)} documents")
         return docs
     except Exception as e:
-        logger.error(f"Error reading documents: {e}", exc_info=True)
+        logger.error(f"Error reading documents: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/documents/{doc_id}", response_model=DocumentInDB)
@@ -113,12 +156,12 @@ def read_document(doc_id: int, db: Session = Depends(get_db)):
         if doc is None:
             logger.warning(f"Document with id={doc_id} not found")
             raise HTTPException(status_code=404, detail="Document not found")
-        logger.info(f"Found document: {doc.title}")
+        logger.info(f"Found document: id={doc.id}, title='{doc.title}'")
         return doc
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error reading document: {e}", exc_info=True)
+        logger.error(f"Error reading document id={doc_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.put("/documents/{doc_id}", response_model=DocumentInDB)
@@ -131,12 +174,14 @@ async def update_document(
     content: str = Form(""),
     db: Session = Depends(get_db)
 ):
-    logger.info(f"Updating document with id={doc_id}")
+    logger.info(f"Updating document with id={doc_id}: title='{title}', category='{category}'")
     try:
         db_doc = db.query(Document).filter(Document.id == doc_id).first()
         if db_doc is None:
             logger.warning(f"Document with id={doc_id} not found for update")
             raise HTTPException(status_code=404, detail="Document not found")
+        
+        old_category = db_doc.category
         
         # Read content from file if provided, otherwise use content field
         if file:
@@ -146,10 +191,11 @@ async def update_document(
         elif not content:
             # If no file or content provided, keep existing content
             content = db_doc.content
+            logger.debug("Keeping existing document content")
         
         # Delete old file if category changed
-        if db_doc.category != category:
-            old_category_dir = get_category_dir(db_doc.category)
+        if old_category != category:
+            old_category_dir = get_category_dir(old_category)
             old_doc_path = os.path.join(old_category_dir, f"{doc_id}.md")
             if os.path.exists(old_doc_path):
                 os.remove(old_doc_path)
@@ -166,7 +212,7 @@ async def update_document(
         # Save new Markdown file in new category directory
         category_dir = get_category_dir(category)
         doc_path = os.path.join(category_dir, f"{db_doc.id}.md")
-        with open(doc_path, "w") as f:
+        with open(doc_path, "w", encoding="utf-8") as f:
             f.write(content)
         logger.info(f"Updated document saved to file: {doc_path}")
         
@@ -177,7 +223,7 @@ async def update_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating document: {e}", exc_info=True)
+        logger.error(f"Error updating document id={doc_id}: {str(e)}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -207,7 +253,7 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting document: {e}", exc_info=True)
+        logger.error(f"Error deleting document id={doc_id}: {str(e)}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -223,9 +269,12 @@ def search_documents(query: str, db: Session = Depends(get_db)):
                 Document.content.contains(query)
             )
         ).all()
+        logger.debug(f"Keyword search found {len(keyword_results)} results")
         
         # Semantic search
         semantic_results = search_engine.semantic_search(query)
+        logger.debug(f"Semantic search found {len(semantic_results)} results")
+        
         semantic_doc_ids = [r["doc_id"] for r in semantic_results]
         semantic_docs = db.query(Document).filter(Document.id.in_(semantic_doc_ids)).all()
         
@@ -236,19 +285,27 @@ def search_documents(query: str, db: Session = Depends(get_db)):
                 combined[doc.id] = doc
         
         result_docs = list(combined.values())
-        logger.info(f"Search returned {len(result_docs)} results")
+        logger.info(f"Search returned {len(result_docs)} results total")
         return result_docs
     except Exception as e:
-        logger.error(f"Error searching documents: {e}", exc_info=True)
+        logger.error(f"Error searching documents: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 # Initialize search index on startup
 @app.on_event("startup")
 def startup_event():
-    logger.info("Starting up application...")
+    logger.info("=" * 50)
+    logger.info("Starting up Codex RAG application...")
+    logger.info("=" * 50)
     try:
         db = next(get_db())
         search_engine.rebuild_index(db)
         logger.info("Application startup complete")
     except Exception as e:
-        logger.error(f"Error during startup: {e}", exc_info=True)
+        logger.error(f"Error during startup: {str(e)}", exc_info=True)
+
+@app.on_event("shutdown")
+def shutdown_event():
+    logger.info("=" * 50)
+    logger.info("Shutting down Codex RAG application...")
+    logger.info("=" * 50)
