@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>我的知识库</h1>
+            <button id="newDocBtn">新建文档</button>
+        </header>
+        
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="搜索文档...">
+            <button id="searchBtn">搜索</button>
+        </div>
+        
+        <div class="content">
+            <div id="docList" class="doc-list"></div>
+            <div id="docEditor" class="doc-editor hidden">
+                <div class="editor-header">
+                    <input type="text" id="docTitle" placeholder="文档标题">
+                    <select id="docCategory">
+                        <option value="history">历史</option>
+                        <option value="finance">金融</option>
+                        <option value="english">英语</option>
+                    </select>
+                    <input type="text" id="docTags" placeholder="标签（逗号分隔）">
+                </div>
+                <div class="file-upload">
+                    <label for="docFile">上传文档文件（.md, .txt）：</label>
+                    <input type="file" id="docFile" accept=".md,.txt">
+                </div>
+                <textarea id="docContent" placeholder="或在此输入 Markdown 内容..."></textarea>
+                <div class="editor-footer">
+                    <button id="saveDocBtn">保存</button>
+                    <button id="cancelBtn">取消</button>
+                    <button id="deleteDocBtn" class="danger hidden">删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+data/db/*.db
+data/index/*
+data/docs/*.md
+data/docs/*/*.md
+data/app.log
+.env
