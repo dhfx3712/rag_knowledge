@@ -65,6 +65,9 @@ button {
     border-bottom: 1px solid #eee;
     cursor: pointer;
     transition: background-color 0.2s;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
 }
 .doc-item:hover {
     background-color: #f9f9f9;
@@ -75,6 +78,9 @@ button {
 }
 .doc-item.search-result:hover {
     background-color: #f0f7ff;
+}
+.doc-item-main {
+    flex: 1;
 }
 .doc-header {
     display: flex;
@@ -221,4 +227,15 @@ mark {
 #deleteDocBtn {
     background-color: #e74c3c;
     color: white;
+}
+.delete-btn {
+    background-color: #e74c3c;
+    color: white;
+    padding: 4px 8px;
+    font-size: 12px;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+.delete-btn:hover {
+    opacity: 1;
 }

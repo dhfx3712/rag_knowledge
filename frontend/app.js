@@ -6,13 +6,31 @@ async function loadDocuments() {
     const docList = document.getElementById('docList');
     docList.innerHTML = docs.map(doc => `
         <div class="doc-item" data-id="${doc.id}">
-            <h3>${doc.title || '无标题'}</h3>
-            <div class="meta">${doc.category} | ${doc.tags} | ${new Date(doc.created_at).toLocaleString()}</div>
+            <div class="doc-item-main">
+                <h3>${doc.title || '无标题'}</h3>
+                <div class="meta">${doc.category} | ${doc.tags} | ${new Date(doc.created_at).toLocaleString()}</div>
+            </div>
+            <button class="delete-btn" data-id="${doc.id}">删除</button>
         </div>
     `).join('');
     
-    document.querySelectorAll('.doc-item').forEach(item => {
-        item.addEventListener('click', () => editDocument(parseInt(item.dataset.id)));
+    document.querySelectorAll('.doc-item-main').forEach(item => {
+        item.addEventListener('click', (e) => {
+            if (!e.target.closest('.delete-btn')) {
+                editDocument(parseInt(item.closest('.doc-item').dataset.id));
+            }
+        });
+    });
+    
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const docId = parseInt(btn.dataset.id);
+            if (confirm('确定要删除这个文档吗？')) {
+                await fetch(`/documents/${docId}`, {method: 'DELETE'});
+                loadDocuments();
+            }
+        });
     });
 }
 
@@ -66,18 +84,36 @@ async function searchDocuments() {
         }
         return `
             <div class="doc-item search-result" data-id="${doc.id}">
-                <div class="doc-header">
-                    <h3>${escapeHtml(doc.title || '无标题')}</h3>
-                    ${doc.is_keyword_match ? '<span class="badge keyword-match">关键词匹配</span>' : ''}
+                <div class="doc-item-main">
+                    <div class="doc-header">
+                        <h3>${escapeHtml(doc.title || '无标题')}</h3>
+                        ${doc.is_keyword_match ? '<span class="badge keyword-match">关键词匹配</span>' : ''}
+                    </div>
+                    <div class="meta">${doc.category} | ${doc.tags} | ${new Date(doc.created_at).toLocaleString()}</div>
+                    ${matchesHtml}
                 </div>
-                <div class="meta">${doc.category} | ${doc.tags} | ${new Date(doc.created_at).toLocaleString()}</div>
-                ${matchesHtml}
+                <button class="delete-btn" data-id="${doc.id}">删除</button>
             </div>
         `;
     }).join('');
     
-    document.querySelectorAll('.doc-item').forEach(item => {
-        item.addEventListener('click', () => editDocument(parseInt(item.dataset.id)));
+    document.querySelectorAll('.doc-item-main').forEach(item => {
+        item.addEventListener('click', (e) => {
+            if (!e.target.closest('.delete-btn')) {
+                editDocument(parseInt(item.closest('.doc-item').dataset.id));
+            }
+        });
+    });
+    
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const docId = parseInt(btn.dataset.id);
+            if (confirm('确定要删除这个文档吗？')) {
+                await fetch(`/documents/${docId}`, {method: 'DELETE'});
+                searchDocuments();
+            }
+        });
     });
 }
 

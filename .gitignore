@@ -5,5 +5,5 @@ data/db/*.db
 data/index/*
 data/docs/*.md
 data/docs/*/*.md
-data/app.log
+data/app.*
 .env

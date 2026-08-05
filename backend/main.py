@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from .database import get_db, engine, Base
 from .models import Document
-from .schemas import DocumentCreate, DocumentUpdate, DocumentInDB
+from .schemas import DocumentCreate, DocumentUpdate, DocumentInDB, DocumentListItem
 from .search import search_engine
 import os
 import logging
@@ -16,7 +16,7 @@ import re
 # Configure enhanced logging
 def setup_logging():
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG);
     
     # Format: timestamp - logger_name - level - filename:line - message
     log_format = logging.Formatter(
@@ -60,13 +60,15 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
 # Helper function to find keyword matches with context
-def find_keyword_matches(content, query, context_chars=100):
-    """Find all occurrences of query in content and return with context"""
+def find_keyword_matches(content, query, context_chars=100, max_matches=10):
+    """Find all occurrences of query in content and return with context, up to max_matches"""
     matches = []
     # Case-insensitive search
     pattern = re.compile(re.escape(query), re.IGNORECASE)
     
     for match in pattern.finditer(content):
+        if len(matches) >= max_matches:
+            break
         start_idx = max(0, match.start() - context_chars)
         end_idx = min(len(content), match.end() + context_chars)
         
@@ -164,7 +166,7 @@ async def create_document(
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.get("/documents/", response_model=list[DocumentInDB])
+@app.get("/documents/", response_model=list[DocumentListItem])
 def read_documents(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     logger.info(f"Reading documents: skip={skip}, limit={limit}")
     try:
@@ -208,19 +210,15 @@ async def update_document(
             logger.warning(f"Document with id={doc_id} not found for update")
             raise HTTPException(status_code=404, detail="Document not found")
         
-        old_category = db_doc.category
-        
         # Read content from file if provided, otherwise use content field
         if file:
-            logger.info(f"Reading content from uploaded file: {file.filename}")
+            logger.info(f"Reading content from uploaded file: {file.filename}, size: {file.size if file.size else 'unknown'} bytes")
             content_bytes = await file.read()
             content = content_bytes.decode("utf-8")
-        elif not content:
-            # If no file or content provided, keep existing content
-            content = db_doc.content
-            logger.debug("Keeping existing document content")
+            logger.debug(f"File content length: {len(content)} characters")
         
-        # Delete old file if category changed
+        # Delete old Markdown file if category changed
+        old_category = db_doc.category
         if old_category != category:
             old_category_dir = get_category_dir(old_category)
             old_doc_path = os.path.join(old_category_dir, f"{doc_id}.md")
@@ -243,8 +241,8 @@ async def update_document(
             f.write(content)
         logger.info(f"Updated document saved to file: {doc_path}")
         
-        # Rebuild search index (simple approach for now)
-        search_engine.rebuild_index(db)
+        # Update search index
+        search_engine.update_document(db_doc.id, content, db)
         logger.info(f"Document updated successfully with id={db_doc.id}")
         return db_doc
     except HTTPException:
@@ -263,18 +261,19 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
             logger.warning(f"Document with id={doc_id} not found for deletion")
             raise HTTPException(status_code=404, detail="Document not found")
         
-        db.delete(db_doc)
-        db.commit()
-        
-        # Delete Markdown file from category directory
+        # Delete Markdown file first
         category_dir = get_category_dir(db_doc.category)
         doc_path = os.path.join(category_dir, f"{doc_id}.md")
         if os.path.exists(doc_path):
             os.remove(doc_path)
             logger.info(f"Deleted document file: {doc_path}")
         
-        # Rebuild search index
-        search_engine.rebuild_index(db)
+        # Delete from database
+        db.delete(db_doc)
+        db.commit()
+        
+        # Delete from search index
+        search_engine.delete_document(doc_id, db)
         logger.info(f"Document deleted successfully with id={doc_id}")
         return {"message": "Document deleted successfully"}
     except HTTPException:
@@ -314,7 +313,7 @@ def search_documents(query: str, db: Session = Depends(get_db)):
         # Prepare search results with keyword matches
         result_docs = []
         for doc_id, doc in combined.items():
-            # Find keyword matches in content
+            # Find keyword matches in content, limit to 10 matches to improve performance
             matches = find_keyword_matches(doc.content, query)
             result_docs.append({
                 "id": doc.id,

@@ -76,15 +76,21 @@ class SearchEngine:
         except Exception as e:
             logger.error(f"Failed to add document id={doc_id} to index: {str(e)}", exc_info=True)
 
-    def update_document(self, doc_id: int, content: str):
-        # Rebuild index for simplicity (we can optimize later)
-        logger.debug(f"update_document called for doc_id={doc_id} (not implemented yet)")
-        pass
+    def update_document(self, doc_id: int, content: str, db: Session):
+        logger.info(f"Updating document id={doc_id} in search index")
+        try:
+            # Rebuild index to handle update
+            self.rebuild_index(db)
+        except Exception as e:
+            logger.error(f"Failed to update document id={doc_id} in index: {str(e)}", exc_info=True)
 
-    def delete_document(self, doc_id: int):
-        # Rebuild index for simplicity (we can optimize later)
-        logger.debug(f"delete_document called for doc_id={doc_id} (not implemented yet)")
-        pass
+    def delete_document(self, doc_id: int, db: Session):
+        logger.info(f"Deleting document id={doc_id} from search index")
+        try:
+            # Rebuild index to handle deletion
+            self.rebuild_index(db)
+        except Exception as e:
+            logger.error(f"Failed to delete document id={doc_id} from index: {str(e)}", exc_info=True)
 
     def rebuild_index(self, db: Session):
         logger.info("Rebuilding search index...")

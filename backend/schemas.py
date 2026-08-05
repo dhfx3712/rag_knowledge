@@ -4,17 +4,25 @@ from typing import List, Optional
 
 class DocumentBase(BaseModel):
     title: str
-    content: str
     category: str
     tags: str
 
 class DocumentCreate(DocumentBase):
-    pass
+    content: str
 
 class DocumentUpdate(DocumentBase):
-    pass
+    content: str
 
 class DocumentInDB(DocumentBase):
+    id: int
+    content: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class DocumentListItem(DocumentBase):
     id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
