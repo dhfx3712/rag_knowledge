@@ -40,17 +40,26 @@ class SearchEngine:
         if os.path.exists(INDEX_PATH):
             try:
                 self.index = faiss.read_index(INDEX_PATH)
+                # 确保是 IndexIDMap 类型
+                if not hasattr(self.index, 'id_map'):
+                    logger.warning("Loaded index is not IndexIDMap, converting...")
+                    # 转换为 IndexIDMap
+                    flat_index = self.index
+                    self.index = faiss.IndexIDMap(faiss.IndexFlatL2(48))
+                    if flat_index.ntotal > 0:
+                        # 重建 id 映射，这里我们简单处理，实际需要加载旧的 doc_ids
+                        logger.warning("Cannot recover old IDs, will rebuild index on next operation")
                 doc_ids_path = INDEX_PATH + ".doc_ids.npy"
                 if os.path.exists(doc_ids_path):
                     self.doc_ids = np.load(doc_ids_path).tolist()
                 logger.info(f"Successfully loaded index with {len(self.doc_ids)} documents")
             except Exception as e:
                 logger.error(f"Failed to load index: {str(e)}", exc_info=True)
-                self.index = faiss.IndexFlatL2(48)  # 48 dimensions for mock embeddings
+                self.index = faiss.IndexIDMap(faiss.IndexFlatL2(48))
                 self.doc_ids = []
         else:
             logger.info("No existing index found, creating new empty index")
-            self.index = faiss.IndexFlatL2(48)  # 48 dimensions for mock embeddings
+            self.index = faiss.IndexIDMap(faiss.IndexFlatL2(48))
             self.doc_ids = []
 
     def _save_index(self):
@@ -67,35 +76,56 @@ class SearchEngine:
     def add_document(self, doc_id: int, content: str):
         logger.info(f"Adding document id={doc_id} to search index")
         try:
+            # 如果 ID 已存在，先删除
+            if doc_id in self.doc_ids:
+                logger.warning(f"Document id={doc_id} already exists, removing old entry first")
+                self.index.remove_ids(np.array([doc_id], dtype=np.int64))
+                self.doc_ids.remove(doc_id)
+            
             # embedding = self.model.encode([content])[0]
             embedding = mock_embed([content])[0]
-            self.index.add(np.array([embedding]))
+            self.index.add_with_ids(np.array([embedding]), np.array([doc_id], dtype=np.int64))
             self.doc_ids.append(doc_id)
             self._save_index()
             logger.debug(f"Document id={doc_id} added to index successfully")
         except Exception as e:
             logger.error(f"Failed to add document id={doc_id} to index: {str(e)}", exc_info=True)
 
-    def update_document(self, doc_id: int, content: str, db: Session):
+    def update_document(self, doc_id: int, content: str, db: Session = None):
         logger.info(f"Updating document id={doc_id} in search index")
         try:
-            # Rebuild index to handle update
-            self.rebuild_index(db)
+            # 如果 ID 存在，先删除
+            if doc_id in self.doc_ids:
+                self.index.remove_ids(np.array([doc_id], dtype=np.int64))
+                self.doc_ids.remove(doc_id)
+            
+            # 添加新的
+            # embedding = self.model.encode([content])[0]
+            embedding = mock_embed([content])[0]
+            self.index.add_with_ids(np.array([embedding]), np.array([doc_id], dtype=np.int64))
+            self.doc_ids.append(doc_id)
+            self._save_index()
+            logger.info(f"Document id={doc_id} updated in index successfully")
         except Exception as e:
             logger.error(f"Failed to update document id={doc_id} in index: {str(e)}", exc_info=True)
 
-    def delete_document(self, doc_id: int, db: Session):
+    def delete_document(self, doc_id: int, db: Session = None):
         logger.info(f"Deleting document id={doc_id} from search index")
         try:
-            # Rebuild index to handle deletion
-            self.rebuild_index(db)
+            if doc_id in self.doc_ids:
+                self.index.remove_ids(np.array([doc_id], dtype=np.int64))
+                self.doc_ids.remove(doc_id)
+                self._save_index()
+                logger.info(f"Document id={doc_id} deleted from index successfully")
+            else:
+                logger.warning(f"Document id={doc_id} not found in index, nothing to delete")
         except Exception as e:
             logger.error(f"Failed to delete document id={doc_id} from index: {str(e)}", exc_info=True)
 
     def rebuild_index(self, db: Session):
         logger.info("Rebuilding search index...")
         try:
-            self.index = faiss.IndexFlatL2(48)
+            self.index = faiss.IndexIDMap(faiss.IndexFlatL2(48))
             self.doc_ids = []
             doc_count = 0
             if db:
@@ -103,7 +133,7 @@ class SearchEngine:
                 for doc in docs:
                     # embedding = self.model.encode([doc.content])[0]
                     embedding = mock_embed([doc.content])[0]
-                    self.index.add(np.array([embedding]))
+                    self.index.add_with_ids(np.array([embedding]), np.array([doc.id], dtype=np.int64))
                     self.doc_ids.append(doc.id)
                     doc_count += 1
             self._save_index()
