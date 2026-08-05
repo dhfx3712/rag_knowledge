@@ -1,3 +1,50 @@
+// 前端性能监控
+(function() {
+    // 1. 页面加载完成后输出 timing 数据
+    window.addEventListener('load', function() {
+        setTimeout(function() {
+            if (performance.timing) {
+                const t = performance.timing;
+                console.log('===== 页面加载性能 =====');
+                console.log('总耗时:', t.loadEventEnd - t.navigationStart, 'ms');
+                console.log('DOM 加载:', t.domComplete - t.domLoading, 'ms');
+                console.log('TTFB:', t.responseStart - t.requestStart, 'ms');
+            }
+        }, 0);
+    });
+
+    // 2. 监控资源加载
+    if ('PerformanceObserver' in window) {
+        const resourceObs = new PerformanceObserver(function(list) {
+            list.getEntries().forEach(function(entry) {
+                console.log('[资源加载]', entry.name, '|', entry.duration.toFixed(2), 'ms');
+            });
+        });
+        try {
+            resourceObs.observe({ entryTypes: ['resource'] });
+        } catch(e) {}
+    }
+
+    // 3. 包裹 fetch 来监控 API 请求
+    const originalFetch = window.fetch;
+    window.fetch = function(url, options) {
+        const start = performance.now();
+        const reqId = 'req-' + Date.now();
+        console.log('[API 开始]', reqId, url);
+        
+        return originalFetch.apply(this, arguments).then(function(response) {
+            const duration = performance.now() - start;
+            const serverTime = response.headers.get('X-Response-Time');
+            console.log('[API 完成]', reqId, response.status, '|', duration.toFixed(2), 'ms', serverTime ? '(服务器: ' + serverTime + 'ms)' : '');
+            return response;
+        }).catch(function(error) {
+            const duration = performance.now() - start;
+            console.error('[API 错误]', reqId, duration.toFixed(2), 'ms', error);
+            throw error;
+        });
+    };
+})();
+
 let currentPage = 1;
 const pageSize = 20;
 let hasMorePages = true;

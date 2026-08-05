@@ -87,25 +87,45 @@ def find_keyword_matches(content, query, context_chars=100, max_matches=10):
     
     return matches
 
-# Middleware to log all requests
+# Middleware to log all requests with detailed timing
+import time
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    start_time = datetime.now()
+    start_time = time.time()
     client_host = request.client.host if request.client else "unknown"
-    logger.info(f"Request: {request.method} {request.url} from {client_host}")
+    
+    # 更详细的请求监控
+    request_id = f"{int(time.time() * 1000000)}"
+    logger.info(f"[REQ-{request_id}] Request: {request.method} {request.url} from {client_host}")
     
     try:
         response = await call_next(request)
-        process_time = (datetime.now() - start_time).total_seconds()
-        logger.info(f"Response: {response.status_code} for {request.method} {request.url} (took {process_time:.2f}s)")
+        total_time = (time.time() - start_time) * 1000
+        logger.info(f"[REQ-{request_id}] Response: {response.status_code} | Total: {total_time:.2f}ms | URL: {request.method} {request.url}")
+        response.headers["X-Response-Time"] = f"{total_time:.2f}"
+        response.headers["X-Request-ID"] = request_id
         return response
     except Exception as e:
-        process_time = (datetime.now() - start_time).total_seconds()
-        logger.error(f"Request failed: {request.method} {request.url} - Error: {str(e)} (took {process_time:.2f}s)", exc_info=True)
+        error_time = (time.time() - start_time) * 1000
+        logger.error(f"[REQ-{request_id}] Request failed after {error_time:.2f}ms: {request.method} {request.url} - Error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
-# Mount frontend static files
-app.mount("/static", StaticFiles(directory="frontend"), name="static")
+# Mount frontend static files with timing monitoring
+import time
+class TimedStaticFiles(StaticFiles):
+    async def __call__(self, scope, receive, send):
+        start_time = time.time()
+        path = scope.get('path', '')
+        try:
+            await super().__call__(scope, receive, send)
+            elapsed = (time.time() - start_time) * 1000
+            logger.info(f"[STATIC] Served {path} in {elapsed:.2f}ms")
+        except Exception as e:
+            elapsed = (time.time() - start_time) * 1000
+            logger.error(f"[STATIC] Failed to serve {path} after {elapsed:.2f}ms: {str(e)}", exc_info=True)
+            raise
+
+app.mount("/static", TimedStaticFiles(directory="frontend"), name="static")
 
 # Serve frontend
 @app.get("/")
@@ -175,10 +195,13 @@ def list_documents(
 ):
     logger.info(f"Listing documents: skip={skip}, limit={limit}")
     try:
+        import time
+        db_query_start = time.time()
         documents = db.query(Document).order_by(
             Document.created_at.desc()
         ).offset(skip).limit(limit).all()
-        logger.info(f"Returning {len(documents)} documents")
+        db_query_time = (time.time() - db_query_start) * 1000
+        logger.info(f"[DB] Query completed in {db_query_time:.2f}ms | Returning {len(documents)} documents")
         return documents
     except Exception as e:
         logger.error(f"Error listing documents: {str(e)}", exc_info=True)
