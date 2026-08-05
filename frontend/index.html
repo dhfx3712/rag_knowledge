@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>知识库</title>
-    <link rel="stylesheet" href="/static/style.css?v=3">
+    <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
     <div class="container">
         <header>
             <h1>我的知识库</h1>
-            <button id="newDocBtn">新建文档</button>
+            <button id="newDocBtn">上传文档</button>
         </header>
         
         <div class="search-bar">
@@ -18,31 +18,51 @@
             <button id="searchBtn">搜索</button>
         </div>
         
+        <div class="pagination" id="pagination">
+            <button id="prevPage" class="page-btn" disabled>上一页</button>
+            <span id="pageInfo">第 1 页</span>
+            <button id="nextPage" class="page-btn">下一页</button>
+        </div>
+        
         <div class="content">
             <div id="docList" class="doc-list"></div>
-            <div id="docEditor" class="doc-editor hidden">
-                <div class="editor-header">
-                    <input type="text" id="docTitle" placeholder="文档标题">
-                    <select id="docCategory">
-                        <option value="history">历史</option>
-                        <option value="finance">金融</option>
-                        <option value="english">英语</option>
-                    </select>
-                    <input type="text" id="docTags" placeholder="标签（逗号分隔）">
+            <div id="uploadPanel" class="upload-panel hidden">
+                <div class="panel-header">
+                    <h2>上传新文档</h2>
                 </div>
-                <div class="file-upload">
-                    <label for="docFile">上传文档文件（.md, .txt）：</label>
-                    <input type="file" id="docFile" accept=".md,.txt">
+                <div class="panel-content">
+                    <div class="form-group">
+                        <label for="docTitle">文档标题：</label>
+                        <input type="text" id="docTitle" placeholder="请输入文档标题">
+                    </div>
+                    <div class="form-group">
+                        <label for="docCategory">分类：</label>
+                        <select id="docCategory">
+                            <option value="history">历史</option>
+                            <option value="finance">金融</option>
+                            <option value="english">英语</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="docTags">标签（逗号分隔）：</label>
+                        <input type="text" id="docTags" placeholder="请输入标签">
+                    </div>
+                    <div class="form-group">
+                        <label for="docFile">上传文档文件（.md, .txt）：</label>
+                        <input type="file" id="docFile" accept=".md,.txt">
+                    </div>
+                    <div class="form-group">
+                        <label for="docContent">或在此输入内容：</label>
+                        <textarea id="docContent" placeholder="请输入文档内容..."></textarea>
+                    </div>
                 </div>
-                <textarea id="docContent" placeholder="或在此输入 Markdown 内容..."></textarea>
-                <div class="editor-footer">
-                    <button id="saveDocBtn">保存</button>
+                <div class="panel-footer">
+                    <button id="uploadDocBtn" class="primary">上传</button>
                     <button id="cancelBtn">取消</button>
-                    <button id="deleteDocBtn" class="danger hidden">删除</button>
                 </div>
             </div>
         </div>
     </div>
-    <script src="/static/app.js?v=3"></script>
+    <script src="/static/app.js?v=4"></script>
 </body>
 </html>

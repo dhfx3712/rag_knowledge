@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -138,6 +138,7 @@ async def create_document(
             content = content_bytes.decode("utf-8")
             logger.debug(f"File content length: {len(content)} characters")
         
+        # Create database document
         db_doc = Document(
             title=title,
             content=content,
@@ -148,7 +149,7 @@ async def create_document(
         db.commit()
         db.refresh(db_doc)
         
-        # Save Markdown file in category-specific directory
+        # Save Markdown file
         category_dir = get_category_dir(category)
         doc_path = os.path.join(category_dir, f"{db_doc.id}.md")
         with open(doc_path, "w", encoding="utf-8") as f:
@@ -156,7 +157,7 @@ async def create_document(
         logger.info(f"Document saved to file: {doc_path}")
         
         # Add to search index
-        search_engine.add_document(db_doc.id, content)
+        search_engine.add_document(db_doc.id, content, db)
         logger.info(f"Document created successfully with id={db_doc.id}")
         return db_doc
     except HTTPException:
@@ -167,30 +168,35 @@ async def create_document(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/documents/", response_model=list[DocumentListItem])
-def read_documents(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    logger.info(f"Reading documents: skip={skip}, limit={limit}")
+def list_documents(
+    skip: int = Query(0, ge=0, description="跳过的记录数"),
+    limit: int = Query(20, ge=1, le=100, description="每页返回的记录数"),
+    db: Session = Depends(get_db)
+):
+    logger.info(f"Listing documents: skip={skip}, limit={limit}")
     try:
-        docs = db.query(Document).offset(skip).limit(limit).all()
-        logger.info(f"Found {len(docs)} documents")
-        return docs
+        documents = db.query(Document).order_by(
+            Document.created_at.desc()
+        ).offset(skip).limit(limit).all()
+        logger.info(f"Returning {len(documents)} documents")
+        return documents
     except Exception as e:
-        logger.error(f"Error reading documents: {str(e)}", exc_info=True)
+        logger.error(f"Error listing documents: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/documents/{doc_id}", response_model=DocumentInDB)
-def read_document(doc_id: int, db: Session = Depends(get_db)):
-    logger.info(f"Reading document with id={doc_id}")
+def get_document(doc_id: int, db: Session = Depends(get_db)):
+    logger.info(f"Getting document with id={doc_id}")
     try:
-        doc = db.query(Document).filter(Document.id == doc_id).first()
-        if doc is None:
+        db_doc = db.query(Document).filter(Document.id == doc_id).first()
+        if db_doc is None:
             logger.warning(f"Document with id={doc_id} not found")
             raise HTTPException(status_code=404, detail="Document not found")
-        logger.info(f"Found document: id={doc.id}, title=\"{doc.title}\"")
-        return doc
+        return db_doc
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error reading document id={doc_id}: {str(e)}", exc_info=True)
+        logger.error(f"Error getting document id={doc_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.put("/documents/{doc_id}", response_model=DocumentInDB)
@@ -203,7 +209,7 @@ async def update_document(
     content: str = Form(""),
     db: Session = Depends(get_db)
 ):
-    logger.info(f"Updating document with id={doc_id}: title=\"{title}\", category=\"{category}\"")
+    logger.info(f"Updating document with id={doc_id}")
     try:
         db_doc = db.query(Document).filter(Document.id == doc_id).first()
         if db_doc is None:
@@ -212,21 +218,19 @@ async def update_document(
         
         # Read content from file if provided, otherwise use content field
         if file:
-            logger.info(f"Reading content from uploaded file: {file.filename}, size: {file.size if file.size else 'unknown'} bytes")
+            logger.info(f"Reading content from uploaded file for update: {file.filename}")
             content_bytes = await file.read()
             content = content_bytes.decode("utf-8")
-            logger.debug(f"File content length: {len(content)} characters")
         
-        # Delete old Markdown file if category changed
-        old_category = db_doc.category
-        if old_category != category:
-            old_category_dir = get_category_dir(old_category)
+        # Delete old file if category changed
+        if db_doc.category != category:
+            old_category_dir = get_category_dir(db_doc.category)
             old_doc_path = os.path.join(old_category_dir, f"{doc_id}.md")
             if os.path.exists(old_doc_path):
                 os.remove(old_doc_path)
                 logger.info(f"Deleted old document file: {old_doc_path}")
         
-        # Update database
+        # Update database document
         db_doc.title = title
         db_doc.content = content
         db_doc.category = category
