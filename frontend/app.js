@@ -263,14 +263,60 @@ document.getElementById('nextPage').addEventListener('click', () => {
     }
 });
 
-// Load file content into textarea when file is selected
+// Load file content into textarea when file is selected, and auto-extract title
 document.getElementById('docFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (file) {
         const text = await file.text();
         document.getElementById('docContent').value = text;
+        
+        // Auto-extract title from content
+        const titleInput = document.getElementById('docTitle');
+        // Only auto-fill if title is empty (user hasn't manually entered one)
+        if (!titleInput.value.trim()) {
+            const extractedTitle = extractTitleFromContent(text);
+            if (extractedTitle) {
+                titleInput.value = extractedTitle;
+                console.log('Auto-extracted title:', extractedTitle);
+            }
+        }
     }
 });
+
+// Helper function to extract title from content
+function extractTitleFromContent(content) {
+    if (!content) return null;
+    
+    const lines = content.split('\n').map(line => line.trim()).filter(line => line);
+    
+    if (lines.length === 0) return null;
+    
+    // Strategy 1: Look for Markdown heading (# Title)
+    for (const line of lines) {
+        if (line.startsWith('# ')) {
+            return line.substring(2).trim();
+        }
+        if (line.startsWith('## ')) {
+            return line.substring(3).trim();
+        }
+    }
+    
+    // Strategy 2: Take first non-empty line as title
+    const firstLine = lines[0];
+    // If first line is reasonably short (less than 100 chars), use it
+    if (firstLine.length <= 100) {
+        return firstLine;
+    }
+    
+    // Strategy 3: Take first sentence or first 50 chars
+    const firstSentence = firstLine.split(/[.!?。！？]/)[0];
+    if (firstSentence && firstSentence.length <= 100) {
+        return firstSentence.trim();
+    }
+    
+    // Fallback: first 50 chars
+    return firstLine.substring(0, 50).trim() + (firstLine.length > 50 ? '...' : '');
+}
 
 // Initial load
 loadDocuments();

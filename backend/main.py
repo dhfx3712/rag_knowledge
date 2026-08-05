@@ -315,32 +315,49 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
 def search_documents(query: str, db: Session = Depends(get_db)):
     logger.info(f"Searching documents with query='{query}'")
     try:
-        # Keyword search using SQLite LIKE
-        keyword_results = db.query(Document).filter(
-            or_(
-                Document.title.contains(query),
-                Document.content.contains(query)
-            )
-        ).all()
-        logger.debug(f"Keyword search found {len(keyword_results)} results")
+        import time
         
-        # Semantic search
+        # Step 1: 先做关键词搜索，但只获取 ID（减少数据传输）
+        keyword_start = time.time()
+        keyword_ids = [
+            doc.id for doc in db.query(Document.id).filter(
+                or_(
+                    Document.title.contains(query),
+                    Document.content.contains(query)
+                )
+            ).all()
+        ]
+        keyword_time = (time.time() - keyword_start) * 1000
+        logger.debug(f"Keyword search found {len(keyword_ids)} results in {keyword_time:.2f}ms")
+        
+        # Step 2: 语义搜索
+        semantic_start = time.time()
         semantic_results = search_engine.semantic_search(query)
-        logger.debug(f"Semantic search found {len(semantic_results)} results")
+        semantic_time = (time.time() - semantic_start) * 1000
+        logger.debug(f"Semantic search found {len(semantic_results)} results in {semantic_time:.2f}ms")
         
         semantic_doc_ids = [r["doc_id"] for r in semantic_results]
-        semantic_docs = db.query(Document).filter(Document.id.in_(semantic_doc_ids)).all()
         
-        # Combine and deduplicate results
-        combined = {doc.id: doc for doc in keyword_results}
-        for doc in semantic_docs:
-            if doc.id not in combined:
-                combined[doc.id] = doc
+        # Step 3: 合并所有需要的文档 ID，去重
+        all_doc_ids = list(set(keyword_ids + semantic_doc_ids))
+        logger.debug(f"Total unique documents to fetch: {len(all_doc_ids)}")
         
-        # Prepare search results with keyword matches
+        # Step 4: 一次数据库查询获取所有文档（减少往返）
+        fetch_start = time.time()
+        all_docs = db.query(Document).filter(Document.id.in_(all_doc_ids)).all()
+        fetch_time = (time.time() - fetch_start) * 1000
+        logger.debug(f"Fetched {len(all_docs)} documents in {fetch_time:.2f}ms")
+        
+        # Step 5: 建立文档字典方便查找
+        doc_dict = {doc.id: doc for doc in all_docs}
+        
+        # Step 6: 准备结果
         result_docs = []
-        for doc_id, doc in combined.items():
-            # Find keyword matches in content, limit to 10 matches to improve performance
+        for doc_id in all_doc_ids:
+            doc = doc_dict.get(doc_id)
+            if not doc:
+                continue
+                
             matches = find_keyword_matches(doc.content, query)
             result_docs.append({
                 "id": doc.id,
@@ -351,13 +368,14 @@ def search_documents(query: str, db: Session = Depends(get_db)):
                 "updated_at": doc.updated_at,
                 "matches": matches,
                 "match_count": len(matches),
-                "is_keyword_match": doc in keyword_results
+                "is_keyword_match": doc_id in keyword_ids
             })
         
-        # Sort by number of matches (descending)
+        # 排序
         result_docs.sort(key=lambda x: x["match_count"], reverse=True)
         
-        logger.info(f"Search returned {len(result_docs)} results total")
+        total_time = (time.time() - keyword_start) * 1000
+        logger.info(f"Search returned {len(result_docs)} results in {total_time:.2f}ms total")
         return result_docs
     except Exception as e:
         logger.error(f"Error searching documents: {str(e)}", exc_info=True)
