@@ -48,6 +48,7 @@
 let currentPage = 1;
 const pageSize = 20;
 let hasMorePages = true;
+let currentExpandedId = null;
 
 async function loadDocuments() {
     try {
@@ -105,6 +106,47 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// 展开/折叠函数
+function toggleContent(docId) {
+    if (currentExpandedId === docId) {
+        // 折叠当前卡片
+        const card = document.querySelector('.doc-item.search-result[data-id="' + docId + '"]');
+        if (card) {
+            const btn = card.querySelector('.toggle-btn');
+            const fullContent = card.querySelector('.full-content');
+            const matches = card.querySelector('.matches');
+            if (btn) btn.textContent = '展开';
+            if (fullContent) fullContent.style.display = 'none';
+            if (matches) matches.style.display = 'block';
+        }
+        currentExpandedId = null;
+    } else {
+        // 先折叠之前展开的卡片
+        if (currentExpandedId) {
+            const prevCard = document.querySelector('.doc-item.search-result[data-id="' + currentExpandedId + '"]');
+            if (prevCard) {
+                const prevBtn = prevCard.querySelector('.toggle-btn');
+                const prevFull = prevCard.querySelector('.full-content');
+                const prevMatches = prevCard.querySelector('.matches');
+                if (prevBtn) prevBtn.textContent = '展开';
+                if (prevFull) prevFull.style.display = 'none';
+                if (prevMatches) prevMatches.style.display = 'block';
+            }
+        }
+        // 展开新卡片
+        const card = document.querySelector('.doc-item.search-result[data-id="' + docId + '"]');
+        if (card) {
+            const btn = card.querySelector('.toggle-btn');
+            const fullContent = card.querySelector('.full-content');
+            const matches = card.querySelector('.matches');
+            if (btn) btn.textContent = '折叠';
+            if (fullContent) fullContent.style.display = 'block';
+            if (matches) matches.style.display = 'none';
+        }
+        currentExpandedId = docId;
+    }
+}
+
 function highlightText(text, query) {
     if (!query) return escapeHtml(text);
     const regex = new RegExp(`(${escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
@@ -153,15 +195,17 @@ async function searchDocuments() {
                     </div>
                 `;
             }
-            return `
+                        return `
                 <div class="doc-item search-result" data-id="${doc.id}">
                     <div class="doc-item-main">
                         <div class="doc-header">
                             <h3>${escapeHtml(doc.title || '无标题')}</h3>
                             ${doc.is_keyword_match ? '<span class="badge keyword-match">关键词匹配</span>' : ''}
+                            <button class="toggle-btn" onclick="toggleContent(${doc.id})">展开</button>
                         </div>
                         <div class="meta">${escapeHtml(doc.category)} | ${escapeHtml(doc.tags)} | ${new Date(doc.created_at).toLocaleString()}</div>
                         ${matchesHtml}
+                        <div class="full-content" style="display: none; margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 4px; white-space: pre-wrap; font-size: 13px; line-height: 1.6;">${escapeHtml(doc.content)}</div>
                     </div>
                     <button class="delete-btn" data-id="${doc.id}">删除</button>
                 </div>

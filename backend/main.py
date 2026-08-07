@@ -364,6 +364,7 @@ def search_documents(query: str, db: Session = Depends(get_db)):
                 "title": doc.title,
                 "category": doc.category,
                 "tags": doc.tags,
+                "content": doc.content,
                 "created_at": doc.created_at,
                 "updated_at": doc.updated_at,
                 "matches": matches,
